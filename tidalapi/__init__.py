@@ -22,7 +22,7 @@ import json
 import logging
 import requests
 from collections import namedtuple
-from .models import Artist, Album, Track, Playlist, SearchResult, Category, Role
+from .models import Artist, Album, Track, Playlist, SearchResult, Category
 try:
     from urlparse import urljoin
 except ImportError:
@@ -45,16 +45,24 @@ class Config(object):
         self.quality = quality
         self.api_location = 'https://api.tidalhifi.com/v1/'
         self.api_token = 'P5Xbeo5LFvESeDy6' if self.quality == \
-            Quality.lossless else '4zx46pyr9o8qZNRw',
+            Quality.lossless else 'wdgaB1CilGA-S_s2',
+
+class Confignew(object):
+    def __init__(self, quality=Quality.high):
+        self.quality = quality
+        self.api_location = 'https://desktop.tidal.com/'
+        self.api_token = 'P5Xbeo5LFvESeDy6' if self.quality == \
+            Quality.lossless else 'wdgaB1CilGA-S_s2',
 
 
 class Session(object):
 
-    def __init__(self, config=Config()):
+    def __init__(self, config=Config(), config2=Confignew(),):
         self.session_id = None
         self.country_code = None
         self.user = None
         self._config = config
+	self._newconfig = config2
         """:type _config: :class:`Config`"""
 
     def load_session(self, session_id, country_code, user_id):
@@ -97,6 +105,21 @@ class Session(object):
         log.debug("request: %s" % r.request.url)
         r.raise_for_status()
         if r.content:
+            log.debug("response: %s" % json.dumps(r.json(), indent=4))
+        return r
+
+    def request2(self, method, path, params=None, data=None):
+        request_params = {
+            'countryCode': self.country_code,
+        }
+        if params:
+            request_params.update(params)
+        url = urljoin(self._newconfig.api_location, path)
+        r = requests.request(method, url, params=request_params, data=data)
+        log.debug("request: %s" % r.request.url)
+        r.raise_for_status()
+        if r.content:
+	    print("response: %s" % json.dumps(r.json(), indent=4))
             log.debug("response: %s" % json.dumps(r.json(), indent=4))
         return r
 
@@ -166,9 +189,6 @@ class Session(object):
     def get_track_radio(self, track_id):
         return self._map_request('tracks/%s/radio' % track_id, params={'limit': 100}, ret='tracks')
 
-    def get_track(self, track_id):
-        return self._map_request('tracks/%s' % track_id, ret='track')
-
     def _map_request(self, url, params=None, ret=None):
         json_obj = self.request('GET', url, params).json()
         parse = None
@@ -211,25 +231,18 @@ class Session(object):
 
 
 def _parse_artist(json_obj):
-    return Artist(id=json_obj['id'], name=json_obj['name'], role=Role(json_obj['type']))
+    return Artist(id=json_obj['id'], name=json_obj['name'])
 
 
-def _parse_artists(json_obj):
-    return list(map(_parse_artist, json_obj))
-
-
-def _parse_album(json_obj, artist=None, artists=None):
+def _parse_album(json_obj, artist=None):
     if artist is None:
         artist = _parse_artist(json_obj['artist'])
-    if artists is None:
-        artists = _parse_artists(json_obj['artists'])
     kwargs = {
         'id': json_obj['id'],
         'name': json_obj['title'],
         'num_tracks': json_obj.get('numberOfTracks'),
         'duration': json_obj.get('duration'),
         'artist': artist,
-        'artists': artists,
     }
     if 'releaseDate' in json_obj and json_obj['releaseDate'] is not None:
         try:
@@ -263,8 +276,7 @@ def _parse_playlist(json_obj):
 
 def _parse_track(json_obj):
     artist = _parse_artist(json_obj['artist'])
-    artists = _parse_artists(json_obj['artists'])
-    album = _parse_album(json_obj['album'], artist, artists)
+    album = _parse_album(json_obj['album'], artist)
     kwargs = {
         'id': json_obj['id'],
         'name': json_obj['title'],
@@ -273,7 +285,6 @@ def _parse_track(json_obj):
         'disc_num': json_obj['volumeNumber'],
         'popularity': json_obj['popularity'],
         'artist': artist,
-        'artists': artists,
         'album': album,
         'available': bool(json_obj['streamReady']),
     }
@@ -297,6 +308,10 @@ class Favorites(object):
     def __init__(self, session, user_id):
         self._session = session
         self._base_url = 'users/%s/favorites' % user_id
+	self._playlist_url = '/playlists/'
+
+    def add_to_playlist(self, track_id, playlist_id):
+        return self._session.request2('POST', '/playlists/%s/items' % playlist_id, data={'trackId': track_id}).ok
 
     def add_artist(self, artist_id):
         return self._session.request('POST', self._base_url + '/artists', data={'artistId': artist_id}).ok
