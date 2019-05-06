@@ -17,6 +17,8 @@
 
 from __future__ import unicode_literals
 
+import time
+#import urllib3
 import datetime
 import json
 import logging
@@ -28,10 +30,10 @@ try:
 except ImportError:
     from urllib.parse import urljoin
 
-
 log = logging.getLogger(__name__)
 
 Api = namedtuple('API', ['location', 'token'])
+#urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class Quality(object):
@@ -43,15 +45,15 @@ class Quality(object):
 class Config(object):
     def __init__(self, quality=Quality.high):
         self.quality = quality
-        self.api_location = 'https://api.tidalhifi.com/v1/'
-        self.api_token = 'P5Xbeo5LFvESeDy6' if self.quality == \
+        self.api_location = 'https://desktop.tidal.com/v1/'
+        self.api_token = 'BI218mwp9ERZ3PFI' if self.quality == \
             Quality.lossless else 'wdgaB1CilGA-S_s2',
 
 class Confignew(object):
     def __init__(self, quality=Quality.high):
         self.quality = quality
-        self.api_location = 'https://desktop.tidal.com/'
-        self.api_token = 'P5Xbeo5LFvESeDy6' if self.quality == \
+        self.api_location = 'https://desktop.tidal.com/v1/'
+        self.api_token = 'BI218mwp9ERZ3PFI' if self.quality == \
             Quality.lossless else 'wdgaB1CilGA-S_s2',
 
 
@@ -62,7 +64,7 @@ class Session(object):
         self.country_code = None
         self.user = None
         self._config = config
-	self._newconfig = config2
+        self._newconfig = config2
         """:type _config: :class:`Config`"""
 
     def load_session(self, session_id, country_code, user_id):
@@ -77,7 +79,7 @@ class Session(object):
             'username': username,
             'password': password,
         }
-        r = requests.post(url, data=payload, params=params)
+        r = requests.post(url, data=payload, params=params)#, verify=False)
         r.raise_for_status()
         body = r.json()
         self.session_id = body['sessionId']
@@ -101,21 +103,31 @@ class Session(object):
         if params:
             request_params.update(params)
         url = urljoin(self._config.api_location, path)
-        r = requests.request(method, url, params=request_params, data=data)
+        r = requests.request(method, url, params=request_params, data=data)#, verify=False)
         log.debug("request: %s" % r.request.url)
         r.raise_for_status()
         if r.content:
             log.debug("response: %s" % json.dumps(r.json(), indent=4))
         return r
 
-    def request2(self, method, path, params=None, data=None):
+    def request2(self, method, path, playlist_id, params=None, data=None):
         request_params = {
+		    #'sessionId': self.session_id,
             'countryCode': self.country_code,
         }
+        headers1 = {'x-tidal-sessionid': self.session_id}
+        r1 = requests.request('GET', ' https://desktop.tidal.com/v1/playlists/%s' % playlist_id, params=request_params, data=None, verify=False, headers=headers1)
+        time_unix = r1.headers.get('ETag')
+        print(time_unix)
+        #time_unix = '"%d"' % int(time.time())
+        headers = {'if-none-match': time_unix, 'x-tidal-sessionid': self.session_id}
         if params:
             request_params.update(params)
         url = urljoin(self._newconfig.api_location, path)
-        r = requests.request(method, url, params=request_params, data=data)
+        r = requests.request(method, url, params=request_params, data=data, headers=headers) #verify=False
+        #print("request: %s" % r.request.url)
+        #print("request: %s" % data)
+        #print("request: %s" % request_params)
         log.debug("request: %s" % r.request.url)
         r.raise_for_status()
         if r.content:
@@ -308,10 +320,10 @@ class Favorites(object):
     def __init__(self, session, user_id):
         self._session = session
         self._base_url = 'users/%s/favorites' % user_id
-	self._playlist_url = '/playlists/'
 
     def add_to_playlist(self, track_id, playlist_id):
-        return self._session.request2('POST', '/playlists/%s/items' % playlist_id, data={'trackId': track_id}).ok
+        #track_id = '%s&onDupes=FAIL' % track_id
+        return self._session.request2('POST', '/v1/playlists/%s/items' % playlist_id, playlist_id, data={'trackIds': track_id}).ok
 
     def add_artist(self, artist_id):
         return self._session.request('POST', self._base_url + '/artists', data={'artistId': artist_id}).ok
